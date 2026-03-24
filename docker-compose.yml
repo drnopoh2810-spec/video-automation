@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./data:/app/data        # persist SQLite database
+    env_file:
+      - .env
+    restart: unless-stopped

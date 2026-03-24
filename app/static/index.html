@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Automation Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+  [x-cloak] { display: none !important; }
+  .status-pending    { @apply bg-yellow-100 text-yellow-800; }
+  .status-completed  { @apply bg-green-100 text-green-800; }
+  .status-failed     { @apply bg-red-100 text-red-800; }
+  .status-generating_script  { @apply bg-blue-100 text-blue-800; }
+  .status-generating_chunks  { @apply bg-purple-100 text-purple-800; }
+  .status-compiling  { @apply bg-indigo-100 text-indigo-800; }
+  .log-error { @apply text-red-600; }
+  .log-info  { @apply text-gray-700; }
+</style>
+</head>
+<body class="bg-gray-50 font-sans" x-data="app()" x-init="init()">
+
+<!-- Sidebar -->
+<div class="flex h-screen overflow-hidden">
+  <aside class="w-64 bg-gray-900 text-white flex flex-col shrink-0">
+    <div class="p-5 border-b border-gray-700">
+      <h1 class="text-xl font-bold">🎬 Video Automation</h1>
+      <p class="text-xs text-gray-400 mt-1">AI Pipeline Dashboard</p>
+    </div>
+    <nav class="flex-1 p-4 space-y-1">
+      <template x-for="item in nav" :key="item.id">
+        <button @click="page = item.id"
+          :class="page === item.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'"
+          class="w-full text-right px-4 py-2 rounded-lg flex items-center gap-3 transition">
+          <span x-text="item.icon"></span>
+          <span x-text="item.label"></span>
+        </button>
+      </template>
+    </nav>
+    <div class="p-4 border-t border-gray-700 text-xs text-gray-500">
+      <div x-text="'Videos: ' + stats.total_videos"></div>
+      <div x-text="'Completed: ' + stats.completed"></div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="flex-1 overflow-y-auto">
+    <!-- Header -->
+    <header class="bg-white border-b px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+      <h2 class="text-lg font-semibold text-gray-800" x-text="currentPageLabel"></h2>
+      <button @click="loadAll()" class="text-sm text-blue-600 hover:underline">🔄 تحديث</button>
+    </header>
+
+    <div class="p-6">
+
+      <!-- ── Dashboard ── -->
+      <div x-show="page === 'dashboard'" x-cloak>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          <div class="bg-white rounded-xl p-4 shadow-sm border">
+            <div class="text-3xl font-bold text-blue-600" x-text="stats.total_videos"></div>
+            <div class="text-sm text-gray-500 mt-1">إجمالي الفيديوهات</div>
+          </div>
+          <div class="bg-white rounded-xl p-4 shadow-sm border">
+            <div class="text-3xl font-bold text-green-600" x-text="stats.completed"></div>
+            <div class="text-sm text-gray-500 mt-1">مكتملة</div>
+          </div>
+          <div class="bg-white rounded-xl p-4 shadow-sm border">
+            <div class="text-3xl font-bold text-purple-600" x-text="stats.in_progress"></div>
+            <div class="text-sm text-gray-500 mt-1">قيد التنفيذ</div>
+          </div>
+          <div class="bg-white rounded-xl p-4 shadow-sm border">
+            <div class="text-3xl font-bold text-red-600" x-text="stats.failed"></div>
+            <div class="text-sm text-gray-500 mt-1">فشلت</div>
+          </div>
+          <div class="bg-white rounded-xl p-4 shadow-sm border col-span-2 md:col-span-1">
+            <div class="text-3xl font-bold text-orange-500" x-text="stats.queue_size ?? 0"></div>
+            <div class="text-sm text-gray-500 mt-1">في الانتظار (Queue)</div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border p-4">
+          <h3 class="font-semibold mb-3 text-gray-700">آخر الأخطاء</h3>
+          <div x-show="errors.length === 0" class="text-gray-400 text-sm">لا توجد أخطاء 🎉</div>
+          <div class="space-y-2">
+            <template x-for="e in errors" :key="e.id">
+              <div class="bg-red-50 border border-red-100 rounded-lg p-3 text-sm">
+                <div class="flex justify-between">
+                  <span class="font-medium text-red-700" x-text="e.workflow + ' › ' + e.node_name"></span>
+                  <span class="text-gray-400 text-xs" x-text="e.timestamp?.slice(0,19)"></span>
+                </div>
+                <div class="text-red-600 mt-1 text-xs" x-text="e.error_message"></div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Create Video ── -->
+      <div x-show="page === 'create'" x-cloak>
+        <div class="max-w-xl bg-white rounded-xl shadow-sm border p-6">
+          <h3 class="font-semibold text-gray-700 mb-4">إنشاء فيديو جديد</h3>
+          <form @submit.prevent="createVideo()" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">عنوان الفيديو</label>
+              <input x-model="newVideo.video_title" required
+                class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="مثال: أفضل 5 طرق للاستثمار في 2025">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">القناة</label>
+                <select x-model="newVideo.channel_id"
+                  class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                  <option value="default">default</option>
+                  <template x-for="c in channels" :key="c.channel_id">
+                    <option :value="c.channel_id" x-text="c.name + ' (' + c.channel_id + ')'"></option>
+                  </template>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">المجال</label>
+                <input x-model="newVideo.niche"
+                  class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="finance, tech, health...">
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">مدة الفيديو (ثانية)</label>
+                <input x-model.number="newVideo.target_duration" type="number" min="30" max="600"
+                  class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Voice ID</label>
+                <input x-model="newVideo.voice_id"
+                  class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+              </div>
+            </div>
+            <button type="submit" :disabled="creating"
+              class="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition">
+              <span x-show="!creating">🚀 إنشاء الفيديو</span>
+              <span x-show="creating">⏳ جاري الإنشاء...</span>
+            </button>
+          </form>
+          <div x-show="createMsg" class="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700"
+            x-text="createMsg"></div>
+        </div>
+      </div>
+
+      <!-- ── Videos List ── -->
+      <div x-show="page === 'videos'" x-cloak>
+        <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 border-b">
+              <tr>
+                <th class="text-right px-4 py-3 font-medium text-gray-600">العنوان</th>
+                <th class="text-right px-4 py-3 font-medium text-gray-600">القناة</th>
+                <th class="text-right px-4 py-3 font-medium text-gray-600">الحالة</th>
+                <th class="text-right px-4 py-3 font-medium text-gray-600">المشاهد</th>
+                <th class="text-right px-4 py-3 font-medium text-gray-600">التاريخ</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y">
+              <template x-for="v in videos" :key="v.video_id">
+                <tr class="hover:bg-gray-50">
+                  <td class="px-4 py-3 font-medium text-gray-800 max-w-xs truncate" x-text="v.video_title"></td>
+                  <td class="px-4 py-3 text-gray-500" x-text="v.channel_id"></td>
+                  <td class="px-4 py-3">
+                    <span :class="'status-' + v.status"
+                      class="px-2 py-1 rounded-full text-xs font-medium" x-text="v.status"></span>
+                  </td>
+                  <td class="px-4 py-3 text-gray-500" x-text="v.scene_count ?? '-'"></td>
+                  <td class="px-4 py-3 text-gray-400 text-xs" x-text="v.created_at?.slice(0,16)"></td>
+                  <td class="px-4 py-3">
+                    <button @click="viewLogs(v.video_id)"
+                      class="text-blue-600 hover:underline text-xs">سجلات</button>
+                    <a x-show="v.final_video_url" :href="v.final_video_url" target="_blank"
+                      class="mr-2 text-green-600 hover:underline text-xs">▶ مشاهدة</a>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="videos.length === 0">
+                <td colspan="6" class="px-4 py-8 text-center text-gray-400">لا توجد فيديوهات بعد</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Logs Modal -->
+        <div x-show="logsModal" x-cloak
+          class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div class="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="flex items-center justify-between p-4 border-b">
+              <h3 class="font-semibold">سجلات الوكيل – <span x-text="logsVideoId" class="text-blue-600"></span></h3>
+              <button @click="logsModal = false" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div class="overflow-y-auto p-4 space-y-1 font-mono text-xs">
+              <template x-for="l in agentLogs" :key="l.timestamp">
+                <div :class="'log-' + l.level" class="flex gap-2">
+                  <span class="text-gray-400 shrink-0" x-text="l.timestamp?.slice(11,19)"></span>
+                  <span class="text-purple-600 shrink-0" x-text="'[' + l.agent + ']'"></span>
+                  <span x-text="l.message"></span>
+                </div>
+              </template>
+              <div x-show="agentLogs.length === 0" class="text-gray-400">لا توجد سجلات</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Channels ── -->
+      <div x-show="page === 'channels'" x-cloak>
+        <div class="flex gap-4">
+          <!-- Channel Form -->
+          <div class="w-80 bg-white rounded-xl shadow-sm border p-4 shrink-0">
+            <h3 class="font-semibold text-gray-700 mb-3" x-text="editingChannel ? 'تعديل القناة' : 'إضافة قناة'"></h3>
+            <form @submit.prevent="saveChannel()" class="space-y-3">
+              <input x-model="channelForm.channel_id" required placeholder="channel_id"
+                :disabled="editingChannel"
+                class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+              <input x-model="channelForm.name" required placeholder="اسم القناة"
+                class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+              <input x-model="channelForm.niche" placeholder="المجال (finance, tech...)"
+                class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+              <input x-model="channelForm.voice_id" placeholder="ElevenLabs Voice ID"
+                class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+              <input x-model.number="channelForm.target_duration" type="number" placeholder="مدة الفيديو (ثانية)"
+                class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+              <div class="flex gap-2">
+                <button type="submit" class="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700">
+                  <span x-text="editingChannel ? 'حفظ' : 'إضافة'"></span>
+                </button>
+                <button x-show="editingChannel" type="button" @click="cancelEditChannel()"
+                  class="px-3 py-2 border rounded-lg text-sm hover:bg-gray-50">إلغاء</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Channels Table -->
+          <div class="flex-1 bg-white rounded-xl shadow-sm border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50 border-b">
+                <tr>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">ID</th>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">الاسم</th>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">المجال</th>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">المدة</th>
+                  <th class="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y">
+                <template x-for="c in channels" :key="c.channel_id">
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-mono text-xs text-gray-600" x-text="c.channel_id"></td>
+                    <td class="px-4 py-3 font-medium" x-text="c.name"></td>
+                    <td class="px-4 py-3 text-gray-500" x-text="c.niche"></td>
+                    <td class="px-4 py-3 text-gray-500" x-text="c.target_duration + 's'"></td>
+                    <td class="px-4 py-3 flex gap-2">
+                      <button @click="editChannel(c)" class="text-blue-600 hover:underline text-xs">تعديل</button>
+                      <button @click="deleteChannel(c.channel_id)" class="text-red-500 hover:underline text-xs">حذف</button>
+                    </td>
+                  </tr>
+                </template>
+                <tr x-show="channels.length === 0">
+                  <td colspan="5" class="px-4 py-8 text-center text-gray-400">لا توجد قنوات</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── API Settings ── -->
+      <div x-show="page === 'settings'" x-cloak>
+        <div class="flex gap-4">
+          <div class="w-80 bg-white rounded-xl shadow-sm border p-4 shrink-0">
+            <h3 class="font-semibold text-gray-700 mb-3">إضافة حساب API</h3>
+            <form @submit.prevent="saveAccount()" class="space-y-3">
+              <select x-model="accountForm.service"
+                class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">اختر الخدمة</option>
+                <option value="groq">Groq (LLM + Whisper)</option>
+                <option value="elevenlabs">ElevenLabs (TTS)</option>
+                <option value="huggingface">HuggingFace (Images)</option>
+                <option value="creatomate">Creatomate (Video)</option>
+                <option value="supabase">Supabase (Storage)</option>
+              </select>
+              <input x-model="accountForm.label" required placeholder="اسم الحساب (مثال: حساب رئيسي)"
+                class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+              <input x-model="accountForm.api_key" required placeholder="API Key"
+                class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono">
+              <div x-show="accountForm.service === 'supabase'">
+                <input x-model="accountForm.supabase_url" placeholder="https://xxx.supabase.co"
+                  class="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+              <label class="flex items-center gap-2 text-sm">
+                <input type="checkbox" x-model="accountForm.is_active" class="rounded">
+                <span>نشط</span>
+              </label>
+              <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700">
+                إضافة الحساب
+              </button>
+            </form>
+          </div>
+
+          <div class="flex-1 bg-white rounded-xl shadow-sm border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50 border-b">
+                <tr>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">الخدمة</th>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">الاسم</th>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">المفتاح</th>
+                  <th class="text-right px-4 py-3 font-medium text-gray-600">الحالة</th>
+                  <th class="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y">
+                <template x-for="a in accounts" :key="a.id">
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3">
+                      <span class="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium" x-text="a.service"></span>
+                    </td>
+                    <td class="px-4 py-3 font-medium" x-text="a.label"></td>
+                    <td class="px-4 py-3 font-mono text-xs text-gray-500" x-text="a.api_key"></td>
+                    <td class="px-4 py-3">
+                      <span :class="a.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'"
+                        class="px-2 py-1 rounded-full text-xs" x-text="a.is_active ? 'نشط' : 'معطل'"></span>
+                    </td>
+                    <td class="px-4 py-3">
+                      <button @click="deleteAccount(a.id)" class="text-red-500 hover:underline text-xs">حذف</button>
+                    </td>
+                  </tr>
+                </template>
+                <tr x-show="accounts.length === 0">
+                  <td colspan="5" class="px-4 py-8 text-center text-gray-400">لا توجد حسابات مضافة</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+function app() {
+  return {
+    page: 'dashboard',
+    nav: [
+      { id: 'dashboard', label: 'لوحة التحكم', icon: '📊' },
+      { id: 'create',    label: 'إنشاء فيديو',  icon: '🎬' },
+      { id: 'videos',    label: 'الفيديوهات',   icon: '📹' },
+      { id: 'channels',  label: 'القنوات',       icon: '📡' },
+      { id: 'settings',  label: 'إعدادات API',   icon: '🔑' },
+    ],
+    stats: { total_videos: 0, completed: 0, failed: 0, in_progress: 0, total_errors: 0 },
+    errors: [], videos: [], channels: [], accounts: [], agentLogs: [],
+    logsModal: false, logsVideoId: '',
+    creating: false, createMsg: '',
+    newVideo: { video_title: '', channel_id: 'default', niche: 'finance',
+                voice_id: 'EXAVITQu4vr4xnSDxMaL', character_style: 'family_guy', target_duration: 120 },
+    channelForm: { channel_id: '', name: '', niche: 'finance', voice_id: 'EXAVITQu4vr4xnSDxMaL', target_duration: 120 },
+    editingChannel: null,
+    accountForm: { service: '', label: '', api_key: '', supabase_url: '', is_active: true },
+
+    get currentPageLabel() {
+      return this.nav.find(n => n.id === this.page)?.label ?? '';
+    },
+
+    async init() {
+      await this.loadAll();
+      setInterval(() => this.loadAll(), 15000);
+    },
+
+    async loadAll() {
+      await Promise.all([this.loadStats(), this.loadErrors(), this.loadVideos(),
+                         this.loadChannels(), this.loadAccounts()]);
+    },
+
+    async api(path, opts = {}) {
+      const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+
+    async loadStats()    { this.stats   = await this.api('/api/dashboard/stats'); },
+    async loadErrors()   { this.errors  = await this.api('/api/dashboard/recent-errors'); },
+    async loadVideos()   { this.videos  = await this.api('/api/videos'); },
+    async loadChannels() { this.channels = await this.api('/api/channels'); },
+    async loadAccounts() { this.accounts = await this.api('/api/settings/accounts'); },
+
+    async createVideo() {
+      this.creating = true; this.createMsg = '';
+      try {
+        const r = await this.api('/api/videos', { method: 'POST', body: JSON.stringify(this.newVideo) });
+        this.createMsg = `✅ تم إنشاء الفيديو! ID: ${r.video_id}`;
+        this.newVideo.video_title = '';
+        await this.loadVideos(); await this.loadStats();
+        setTimeout(() => this.page = 'videos', 1500);
+      } catch(e) { this.createMsg = '❌ خطأ: ' + e.message; }
+      this.creating = false;
+    },
+
+    async viewLogs(videoId) {
+      this.logsVideoId = videoId;
+      this.agentLogs = await this.api(`/api/videos/${videoId}/logs`);
+      this.logsModal = true;
+    },
+
+    async saveChannel() {
+      const extra = this.channelForm.supabase_url ? { url: this.channelForm.supabase_url } : {};
+      const body = { ...this.channelForm, extra };
+      if (this.editingChannel) {
+        await this.api(`/api/channels/${this.channelForm.channel_id}`, { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await this.api('/api/channels', { method: 'POST', body: JSON.stringify(body) });
+      }
+      this.cancelEditChannel(); await this.loadChannels();
+    },
+
+    editChannel(c) {
+      this.editingChannel = c.channel_id;
+      this.channelForm = { ...c };
+    },
+
+    cancelEditChannel() {
+      this.editingChannel = null;
+      this.channelForm = { channel_id: '', name: '', niche: 'finance', voice_id: 'EXAVITQu4vr4xnSDxMaL', target_duration: 120 };
+    },
+
+    async deleteChannel(id) {
+      if (!confirm('حذف القناة؟')) return;
+      await this.api(`/api/channels/${id}`, { method: 'DELETE' });
+      await this.loadChannels();
+    },
+
+    async saveAccount() {
+      const extra = this.accountForm.service === 'supabase' ? { url: this.accountForm.supabase_url } : {};
+      const body = { service: this.accountForm.service, label: this.accountForm.label,
+                     api_key: this.accountForm.api_key, extra, is_active: this.accountForm.is_active };
+      await this.api('/api/settings/accounts', { method: 'POST', body: JSON.stringify(body) });
+      this.accountForm = { service: '', label: '', api_key: '', supabase_url: '', is_active: true };
+      await this.loadAccounts();
+    },
+
+    async deleteAccount(id) {
+      if (!confirm('حذف الحساب؟')) return;
+      await this.api(`/api/settings/accounts/${id}`, { method: 'DELETE' });
+      await this.loadAccounts();
+    },
+  };
+}
+</script>
+</body>
+</html>
