@@ -12,6 +12,7 @@ from app.agents.image_agent import ImageAgent
 from app.agents.video_agent import VideoAgent
 from app.agents.storage_agent import StorageAgent
 from app.agents.base import BaseAgent
+from app.agents.telegram_agent import notify_success, notify_error
 
 
 async def _update_video_status(db: AsyncSession, video_id: str, status: str, **kwargs):
@@ -72,11 +73,13 @@ async def run_pipeline(db: AsyncSession, video_id: str, title: str, channel_id: 
             completed_at=datetime.utcnow(),
         )
         await base.log(f"Pipeline complete. Final URL: {final_url}", agent="Orchestrator")
+        await notify_success(video_id, title, final_url, total_duration, len(valid_chunks))
 
     except Exception as e:
         await base.log(str(e), level="error", agent="Orchestrator")
         await base.log_error("WF-001", "Orchestrator", str(e))
         await _update_video_status(db, video_id, "failed", error_message=str(e))
+        await notify_error(video_id, title, str(e))
         raise
 
 

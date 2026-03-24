@@ -1,3 +1,13 @@
+---
+title: Video Automation Dashboard
+emoji: 🎬
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_file: app.py
+pinned: false
+---
+
 # 🎬 Video Automation Dashboard
 
 لوحة تحكم كاملة لأتمتة إنشاء الفيديوهات بالذكاء الاصطناعي.

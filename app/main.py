@@ -9,6 +9,7 @@ import logging
 from app.database import init_db
 from app.routers import videos, channels, settings, dashboard
 from app.queue_worker import worker_loop, recover_stuck_jobs, keep_alive_loop
+from app.telegram_bot import polling_loop, router as telegram_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -17,9 +18,9 @@ logging.basicConfig(level=logging.INFO)
 async def lifespan(app: FastAPI):
     await init_db()
     await recover_stuck_jobs()
-    # Start persistent background tasks
     asyncio.create_task(worker_loop())
     asyncio.create_task(keep_alive_loop())
+    asyncio.create_task(polling_loop())
     yield
 
 
@@ -34,6 +35,7 @@ app.include_router(videos.router)
 app.include_router(channels.router)
 app.include_router(settings.router)
 app.include_router(dashboard.router)
+app.include_router(telegram_router)
 
 # Serve static files
 static_dir = os.path.join(os.path.dirname(__file__), "static")

@@ -1,12 +1,13 @@
 """Entry point for HuggingFace Spaces and local development."""
 import os
-import uvicorn
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from app.main import app  # noqa
+# Import app at module level so uvicorn can find it
+from app.main import app  # noqa: F401, E402
 
 if __name__ == "__main__":
+    import uvicorn
     port = int(os.getenv("PORT", 7860))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=False)
